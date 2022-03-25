@@ -1,7 +1,11 @@
+import time
+import copy
 import numpy as np
 import scipy.optimize as opt
 import pandas as pd
-import copy
+
+import data_utils
+
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
@@ -67,11 +71,55 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         predictions[predictions > 0] = 1
         return predictions, scores
 
-    def test(self, X_test, Y_test):
+    def evaluate(self, X_test, Y_test):
         Y_predicted, Y_predicted_scores = self.predict(X_test)
         accuracy = accuracy_score(Y_test, Y_predicted)
         auc = roc_auc_score(Y_test, Y_predicted_scores)
         return accuracy, auc
+    
+    def evaluate_k_fold(self, X, Y, n_splits):
+        # Setup
+        kf = KFold(n_splits=n_splits, shuffle=True,random_state=100)
+        test_accuracy_list = list()
+        training_accuracy_list = list()
+        test_auc_list = list()
+        training_auc_list = list()
+        training_time_list = list()
+        for train_index, test_index in kf.split(X):
+            print("Process new folds...")
+            X_train, X_test = X[train_index], X[test_index]
+            Y_train, Y_test = Y[train_index], Y[test_index]
+            start = time.time()
+            beta_optim = self.train(X_train,Y_train)
+            end = time.time()
+            training_time_list.append(end-start)
+            accuracy, auc = self.evaluate(X_train, Y_train)
+            training_accuracy_list.append(accuracy)
+            training_auc_list.append(auc)
+            print('Training accuracy:', accuracy)
+            print('Training AUC score:', auc)
+            accuracy, auc = self.evaluate(X_test, Y_test)
+            test_accuracy_list.append(accuracy)
+            test_auc_list.append(auc)
+            print('Test accuracy:', accuracy)
+            print('Test AUC score:', auc)
+        avg_training_acc = sum(training_accuracy_list)/float(n_splits)
+        std_training_acc = np.sqrt((np.sum((np.array(training_accuracy_list) - avg_training_acc)**2))/float(n_splits))
+        avg_training_auc = sum(training_auc_list)/float(n_splits)
+        std_training_auc = np.sqrt((np.sum((np.array(training_auc_list) - avg_training_auc)**2))/float(n_splits))
+        avg_test_acc = sum(test_accuracy_list)/float(n_splits)
+        std_test_acc = np.sqrt((np.sum((np.array(test_accuracy_list) - avg_test_acc)**2))/float(n_splits))
+        avg_test_auc = sum(test_auc_list)/float(n_splits)
+        std_test_auc = np.sqrt((np.sum((np.array(test_auc_list) - avg_test_auc)**2))/float(n_splits))
+        print('Average training accuracy: ', avg_training_acc)
+        print('Standard deviation of training accuracy: ', std_training_acc)
+        print('Average training AUC score: ', avg_training_auc)
+        print('Standard deviation of training AUC score: ', std_training_auc)
+        print('Average test accuracy: ', avg_test_acc)
+        print('Standard deviation of test accuracy:', std_test_acc)
+        print('Average test AUC score: ', avg_test_auc)
+        print('Standard deviation of test AUC score: ', std_test_auc)
+        print('Training time (s): ', sum(training_time_list)/float(n_splits))
 
 def compas_k_fold_test():
     # Data 
@@ -95,12 +143,47 @@ def compas_k_fold_test():
         X_train, X_test = X[train_index], X[test_index]
         Y_train, Y_test = Y[train_index], Y[test_index]
         beta_optim = oftam.train(X_train,Y_train)
-        accuracy, auc = oftam.test(X_train, Y_train)
+        accuracy, auc = oftam.evaluate(X_train, Y_train)
         training_accuracy_avg += accuracy
         training_auc_avg += auc
         print('Training accuracy:', accuracy)
         print('Training AUC score:', auc)
-        accuracy, auc = oftam.test(X_test, Y_test)
+        accuracy, auc = oftam.evaluate(X_test, Y_test)
+        test_accuracy_avg += accuracy
+        test_auc_avg += auc
+        print('Test accuracy:', accuracy)
+        print('Test AUC score:', auc)
+    print('Average training accuracy:', training_accuracy_avg/float(n_splits))
+    print('Average training AUC score:', training_auc_avg/float(n_splits))
+    print('Average test accuracy:', test_accuracy_avg/float(n_splits))
+    print('Average test AUC score:', test_auc_avg/float(n_splits))
+
+def compas_k_fold_test_nam():
+    # Data 
+    comps_data = pd.read_csv('./data/compas.csv', delimiter=';')
+    normalized_comps_data=(comps_data-comps_data.min())/(comps_data.max()-comps_data.min())
+    Y = normalized_comps_data['two_year_recid'].to_numpy()
+    X = normalized_comps_data.loc[:, normalized_comps_data.columns != 'two_year_recid'].to_numpy()
+    # Model
+    regularisation_param = 0.01
+    number_of_points = 55
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points)
+    # Setup
+    n_splits = 5
+    test_accuracy_avg = 0.0
+    training_accuracy_avg = 0.0
+    test_auc_avg = 0.0
+    training_auc_avg = 0.0
+    for test_fold_index in range(n_splits):
+        print("Process new folds...")
+        (X_train, Y_train), (X_test, Y_test) = data_utils.get_train_test_fold(X,Y,test_fold_index+1,n_splits)
+        beta_optim = oftam.train(X_train,Y_train)
+        accuracy, auc = oftam.evaluate(X_train, Y_train)
+        training_accuracy_avg += accuracy
+        training_auc_avg += auc
+        print('Training accuracy:', accuracy)
+        print('Training AUC score:', auc)
+        accuracy, auc = oftam.evaluate(X_test, Y_test)
         test_accuracy_avg += accuracy
         test_auc_avg += auc
         print('Test accuracy:', accuracy)
@@ -111,4 +194,4 @@ def compas_k_fold_test():
     print('Average test AUC score:', test_auc_avg/float(n_splits))
 
 if __name__ == '__main__':
-    compas_k_fold_test()
+    compas_k_fold_test_nam()
