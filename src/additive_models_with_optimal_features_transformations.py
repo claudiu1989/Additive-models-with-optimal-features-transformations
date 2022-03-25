@@ -9,16 +9,17 @@ from sklearn.model_selection import KFold
 from scipy.special import expit
 
 class OptimalFeaturesTransforamtionAdditiveModel:
-    def __init__(self, lambda_param, number_of_points):
+    def __init__(self, lambda_param, number_of_points=10, balance=1.0):
         self.limits = np.linspace(0.0, 1.0, num=number_of_points, endpoint=False)
         self.div = 1.0/float(number_of_points)
         self.lambda_param = lambda_param
+        self.self.balance = balance
 
     @staticmethod
-    def __objective_function(beta,X_train_work, Y_train_work, lambda_param):
+    def __objective_function(beta,X_train_work, balanced_Y_train_work, lambda_param):
         n = X_train_work.shape[0]
         data_points_sums = X_train_work.dot(beta)
-        exponents = Y_train_work*data_points_sums
+        exponents = balanced_Y_train_work*data_points_sums
         terms = np.exp(1-exponents)
         obj_value = (1.0/float(n))*np.sum(terms) + lambda_param*np.linalg.norm(beta,ord=2)
         #print(obj_value)
@@ -38,7 +39,11 @@ class OptimalFeaturesTransforamtionAdditiveModel:
                 X_train_work[:,j*m:(j+1)*m] = X_j
         beta = np.zeros(m*j_max)
         #beta = np.random.rand(m*j_max)
-        result = opt.minimize(OptimalFeaturesTransforamtionAdditiveModel.__objective_function,  beta, args=(X_train_work, Y_train_work, self.lambda_param),  tol=1e-3)
+        if self.balance != 1.0:
+            balanced_Y_train_work = np.array([self.balance * y if y > 0.0 else y for y in Y_train_work])
+        else:
+            balanced_Y_train_work = Y_train_work
+        result = opt.minimize(OptimalFeaturesTransforamtionAdditiveModel.__objective_function,  beta, args=(X_train_work, balanced_Y_train_work, self.lambda_param),  tol=1e-3)
         self.beta_optim = result.x
         return self.beta_optim
 
