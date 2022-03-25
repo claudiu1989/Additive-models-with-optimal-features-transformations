@@ -13,7 +13,7 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         self.limits = np.linspace(0.0, 1.0, num=number_of_points, endpoint=False)
         self.div = 1.0/float(number_of_points)
         self.lambda_param = lambda_param
-        self.self.balance = balance
+        self.balance = balance
 
     @staticmethod
     def __objective_function(beta,X_train_work, balanced_Y_train_work, lambda_param):
@@ -37,7 +37,9 @@ class OptimalFeaturesTransforamtionAdditiveModel:
                 X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
                 X_j[X_j<1.0] = 0.0
                 X_train_work[:,j*m:(j+1)*m] = X_j
-        beta = np.zeros(m*j_max)
+        bias_col = np.ones((n,1))
+        X_train_work = np.append(X_train_work, bias_col, axis=1)
+        beta = np.zeros(m*j_max+1)
         #beta = np.random.rand(m*j_max)
         if self.balance != 1.0:
             balanced_Y_train_work = np.array([self.balance * y if y > 0.0 else y for y in Y_train_work])
@@ -56,6 +58,9 @@ class OptimalFeaturesTransforamtionAdditiveModel:
             X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
             X_j[X_j<1.0] = 0.0
             X_transformed[:,j*m:(j+1)*m] = X_j
+        n = X.shape[0]
+        bias_col = np.ones((n,1))
+        X_transformed = np.append(X_transformed, bias_col, axis=1)
         predictions = X_transformed.dot(self.beta_optim)
         scores = expit(predictions)
         predictions[predictions <= 0] = 0
