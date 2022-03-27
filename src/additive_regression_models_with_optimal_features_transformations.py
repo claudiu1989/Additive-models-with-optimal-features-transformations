@@ -136,7 +136,7 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         training_time_list = list()
         for test_fold_index in range(n_splits):
             print("Process new folds...")
-            (X_train_validation, Y_train_validation), (X_test, Y_test) = data_utils.get_train_test_fold(X,Y,test_fold_index+1,n_splits)
+            (X_train_validation, Y_train_validation), (X_test, Y_test) = data_utils.get_train_test_fold(X,Y,test_fold_index+1,n_splits, stratified=False)
             lambda_param_best, number_of_points_best, b_best = self.grid_search(X_train_validation, Y_train_validation, n_splits, lambda_values, number_of_points_values, b_values)
             self.__init__(lambda_param_best, number_of_points_best, b_best, remove_all_zero_columns=True)
             start = time.time()
@@ -170,7 +170,7 @@ def housing_k_fold_test():
     X = normalized_housing_data.loc[:, normalized_housing_data.columns != 'Label'].to_numpy()
     # Model
     regularisation_param = 0.001
-    number_of_points = 30
+    number_of_points = 60
     oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points)
     # Evaluate
     n_splits = 5
@@ -215,8 +215,34 @@ def predict_linear_regression_fico():
     print('Average test RMSE: ', avg_test_rmse)
     print('Standard deviation of test RMSE:', std_test_rmse)
     print('Training time (s): ', sum(training_time_list)/float(n_splits))
-    
+
+def predict_linear_regression_housing():
+    housing_data = pd.read_csv('./data/california_housing.csv')
+    housing_data.drop(['No'], axis = 1, inplace = True)
+    normalized_housing_data=(housing_data-housing_data.min())/(housing_data.max()-housing_data.min())
+    Y = housing_data['Label'].to_numpy()
+    X = normalized_housing_data.loc[:, normalized_housing_data.columns != 'Label'].to_numpy()
+    test_rmse_list = list()
+    training_time_list = list()
+    n_splits = 5
+    for test_fold_index in range(n_splits):
+        print("Process new folds...")
+        (X_train_validation, Y_train_validation), (X_test, Y_test) = data_utils.get_train_test_fold(X,Y,test_fold_index+1,n_splits, stratified=False)
+        start = time.time()
+        reg = LinearRegression().fit(X_train_validation,Y_train_validation)
+        end = time.time()
+        Y_redicted = reg.predict(X_test)
+        rmse = mean_squared_error(Y_test, Y_redicted, squared=False)
+        print('Test RMSE:', rmse)
+        test_rmse_list.append(rmse)
+    avg_test_rmse = sum(test_rmse_list)/float(n_splits)
+    std_test_rmse = np.sqrt((np.sum((np.array(test_rmse_list) - avg_test_rmse)**2))/float(n_splits))
+    print('Average test RMSE: ', avg_test_rmse)
+    print('Standard deviation of test RMSE:', std_test_rmse)
+    print('Training time (s): ', sum(training_time_list)/float(n_splits))
+
 if __name__ == '__main__':
-   housing_k_fold_test()
-   #fico_k_fold_test()
+   #predict_linear_regression_housing()
+   #housing_k_fold_test()
+   fico_k_fold_test()
    #predict_linear_regression_fico()

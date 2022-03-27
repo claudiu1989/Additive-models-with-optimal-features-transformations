@@ -51,6 +51,8 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         bias_col = np.ones((n,1))
         # Add bias
         X_train_work = np.append(X_train_work, bias_col, axis=1)
+        # Add original features
+        X_train_work = np.append(X_train_work, X_train, axis=1)
         beta = np.zeros(X_train_work.shape[1])
         #beta = np.random.rand(m*j_max)
         if self.balance != 1.0:
@@ -76,6 +78,8 @@ class OptimalFeaturesTransforamtionAdditiveModel:
             X_transformed = np.delete(X_transformed, self.zero_columns_indices, axis=1)
         bias_col = np.ones((n,1))
         X_transformed = np.append(X_transformed, bias_col, axis=1)
+        # Add original features
+        X_transformed = np.append(X_transformed, X, axis=1)
         predictions = X_transformed.dot(self.beta_optim)
         scores = expit(predictions)
         predictions[predictions <= 0] = 0
@@ -200,8 +204,8 @@ def compas_k_fold_test():
     Y = normalized_comps_data['two_year_recid'].to_numpy()
     X = normalized_comps_data.loc[:, normalized_comps_data.columns != 'two_year_recid'].to_numpy()
     # Model
-    regularisation_param = 0.009
-    number_of_points = 60
+    regularisation_param = 0.03
+    number_of_points = 55
     balance = 1.0
     oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, balance)
     # Evaluate
@@ -245,4 +249,5 @@ def compas_k_fold_grid_search():
     print('Best balance:', b_best)
     
 if __name__ == '__main__':
-   credit_k_fold_test()
+   #credit_k_fold_test()
+   compas_k_fold_test()
