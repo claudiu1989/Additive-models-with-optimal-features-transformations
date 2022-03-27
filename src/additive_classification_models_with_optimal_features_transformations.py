@@ -245,4 +245,4 @@ def compas_k_fold_grid_search():
     print('Best balance:', b_best)
     
 if __name__ == '__main__':
-   compas_k_fold_test()
+   credit_k_fold_test()
