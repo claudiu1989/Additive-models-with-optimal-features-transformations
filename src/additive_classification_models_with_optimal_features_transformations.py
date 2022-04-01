@@ -38,7 +38,7 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         m = X.shape[1]
         X_transformed = np.zeros((X.shape[0], m*j_max))
         if self.base == 'picewise_constant':
-            X_transformed[X>=1.0] = 0.999
+            X[X>=1.0] = 0.999
             for j, limit in enumerate(self.limits):
                     X_j = copy.deepcopy(X)
                     X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
@@ -214,7 +214,7 @@ def compas_k_fold_test():
     X = normalized_comps_data.loc[:, normalized_comps_data.columns != 'two_year_recid'].to_numpy()
     # Model
     regularisation_param = 0.03
-    number_of_points = 55
+    number_of_points = 10
     balance = 1.0
     oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, balance)
     # Evaluate
@@ -335,4 +335,5 @@ if __name__ == '__main__':
    #credit_k_fold_test()
    #compas_k_fold_test()
    #compas_k_fold_poly_test()
-   credit_k_fold_radi_test()
+   #credit_k_fold_radi_test()
+   compas_k_fold_test()
