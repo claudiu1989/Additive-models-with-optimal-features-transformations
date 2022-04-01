@@ -14,8 +14,7 @@ from sklearn.linear_model import LinearRegression
 
 class OptimalFeaturesTransforamtionAdditiveModel:
     def __init__(self, lambda_param, number_of_points=10, remove_all_zero_columns=True, base='picewise_constant', C=1.0):
-        self.limits = np.linspace(0.0, 1.0, num=number_of_points, endpoint=False)
-        self.div = 1.0/float(number_of_points)
+        self.number_of_points = number_of_points
         self.lambda_param = lambda_param
         self.remove_all_zero_columns = remove_all_zero_columns
         self.base = base
@@ -26,21 +25,21 @@ class OptimalFeaturesTransforamtionAdditiveModel:
     def __objective_function(beta,X_train_work, Y_train_work, lambda_param):
         n = X_train_work.shape[0]
         current_predictions = X_train_work.dot(beta)
-        #empirical_risk = (1.0/float(n))*np.linalg.norm(current_predictions - Y_train_work,ord=2) 
         empirical_risk = np.sqrt((np.sum((current_predictions- Y_train_work)**2)/float(n)))
         obj_value = empirical_risk + lambda_param*np.linalg.norm(beta,ord=2)
-        #print(obj_value)
         return obj_value
     
     def __transform(self, X):
-        j_max = len(self.limits)
         m = X.shape[1]
-        X_transformed = np.zeros((X.shape[0], m*j_max))
+        n = X.shape[0]
+        X_transformed = np.zeros((X.shape[0], m*self.number_of_points))
         if self.base == 'picewise_constant':
-            X_transformed[X>=1.0] = 0.999
-            for j, limit in enumerate(self.limits):
+            X[X>=1.0] = 0.999
+            limits = np.linspace(0.0, 1.0, num=self.number_of_points, endpoint=False)
+            div = 1.0/float(self.number_of_points)
+            for j, limit in enumerate(limits):
                     X_j = copy.deepcopy(X)
-                    X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
+                    X_j[(X_j>=limit) & (X_j<limit + div)] = 1.0
                     X_j[X_j<1.0] = 0.0
                     X_transformed[:,j*m:(j+1)*m] = X_j
         elif self.base == 'poly':
@@ -52,16 +51,15 @@ class OptimalFeaturesTransforamtionAdditiveModel:
             for j, limit in enumerate(self.limits):
                     X_rad = np.exp(-self.C*np.power(X-limit, 2))
                     X_transformed[:,j*m:(j+1)*m] = X_rad
+        # Add bias
+        bias_col = np.ones((n,1))
+        X_transformed = np.append(X_transformed, bias_col, axis=1)
+        # Add original features
+        X_transformed = np.append(X_transformed, X, axis=1)
         return X_transformed
 
     def train(self, X_train,Y_train):
-        n = X_train.shape[0]
         X_train_work = self.__transform(X_train)
-        bias_col = np.ones((n,1))
-        # Add bias
-        X_train_work = np.append(X_train_work, bias_col, axis=1)
-        # Add original features
-        X_train_work = np.append(X_train_work, X_train, axis=1)
         beta = np.zeros(X_train_work.shape[1])
         #beta = np.random.rand(m*j_max)
         result = opt.minimize(OptimalFeaturesTransforamtionAdditiveModel.__objective_function,  beta, args=(X_train_work, Y_train, self.lambda_param),  tol=1e-3)
@@ -70,14 +68,9 @@ class OptimalFeaturesTransforamtionAdditiveModel:
 
     def predict(self, X):
         X_transformed = self.__transform(X)
-        n = X.shape[0]
         # Remove all-zeros columns
         if self.remove_all_zero_columns:
             X_transformed = np.delete(X_transformed, self.zero_columns_indices, axis=1)
-        bias_col = np.ones((n,1))
-        X_transformed = np.append(X_transformed, bias_col, axis=1)
-        # Add original features
-        X_transformed = np.append(X_transformed, X, axis=1)
         predictions = X_transformed.dot(self.beta_optim)
         return predictions
 
@@ -175,7 +168,7 @@ def housing_k_fold_test():
     X = normalized_housing_data.loc[:, normalized_housing_data.columns != 'Label'].to_numpy()
     # Model
     regularisation_param = 0.001
-    number_of_points = 60
+    number_of_points = 10
     oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points)
     # Evaluate
     n_splits = 5
@@ -312,5 +305,6 @@ if __name__ == '__main__':
    #housing_k_fold_test()
    #fico_k_fold_test()
    #predict_linear_regression_fico()
-   fico_k_fold_radial_test()
+   #fico_k_fold_radial_test()
    #housing_k_fold_radial_test()
+   housing_k_fold_test()
