@@ -1,3 +1,4 @@
+from email.mime import base
 import time
 import copy
 import numpy as np
@@ -12,11 +13,13 @@ from sklearn.model_selection import KFold
 from sklearn.linear_model import LinearRegression
 
 class OptimalFeaturesTransforamtionAdditiveModel:
-    def __init__(self, lambda_param, number_of_points=10, remove_all_zero_columns=True):
+    def __init__(self, lambda_param, number_of_points=10, remove_all_zero_columns=True, base='picewise_constant', C=1.0):
         self.limits = np.linspace(0.0, 1.0, num=number_of_points, endpoint=False)
         self.div = 1.0/float(number_of_points)
         self.lambda_param = lambda_param
         self.remove_all_zero_columns = remove_all_zero_columns
+        self.base = base
+        self.C = C
         self.zero_columns_indices = []
 
     @staticmethod
@@ -24,27 +27,36 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         n = X_train_work.shape[0]
         current_predictions = X_train_work.dot(beta)
         #empirical_risk = (1.0/float(n))*np.linalg.norm(current_predictions - Y_train_work,ord=2) 
-        empirical_risk = np.sqrt((np.sum((current_predictions- Y_train_work)**2))/float(n))
-        obj_value = empirical_risk + lambda_param*np.linalg.norm(beta,ord=1)
+        empirical_risk = np.sqrt((np.sum((current_predictions- Y_train_work)**2)/float(n)))
+        obj_value = empirical_risk + lambda_param*np.linalg.norm(beta,ord=2)
         #print(obj_value)
         return obj_value
+    
+    def __transform(self, X):
+        j_max = len(self.limits)
+        m = X.shape[1]
+        X_transformed = np.zeros((X.shape[0], m*j_max))
+        if self.base == 'picewise_constant':
+            X_transformed[X>=1.0] = 0.999
+            for j, limit in enumerate(self.limits):
+                    X_j = copy.deepcopy(X)
+                    X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
+                    X_j[X_j<1.0] = 0.0
+                    X_transformed[:,j*m:(j+1)*m] = X_j
+        elif self.base == 'poly':
+            X_pow = X
+            for j, limit in enumerate(self.limits):
+                    X_pow = X_pow*X
+                    X_transformed[:,j*m:(j+1)*m] = X_pow
+        else:
+            for j, limit in enumerate(self.limits):
+                    X_rad = np.exp(-self.C*np.power(X-limit, 2))
+                    X_transformed[:,j*m:(j+1)*m] = X_rad
+        return X_transformed
 
     def train(self, X_train,Y_train):
         n = X_train.shape[0]
-        m = X_train.shape[1]
-        j_max = len(self.limits)
-        X_train_work = np.zeros((X_train.shape[0], m*j_max))
-        X_train[X_train>=1.0] = 0.999
-        for j, limit in enumerate(self.limits):
-                X_j = copy.deepcopy(X_train)
-                X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
-                X_j[X_j<1.0] = 0.0
-                X_train_work[:,j*m:(j+1)*m] = X_j
-        # Remove all-zeros columns
-        if self.remove_all_zero_columns: 
-            self.zero_columns_indices = np.where(~X_train_work.any(axis=0))[0]
-            X_train_work = np.delete(X_train_work, self.zero_columns_indices, axis=1)
-            print(f'{len(self.zero_columns_indices)} columns were removed because they had only zeros.')
+        X_train_work = self.__transform(X_train)
         bias_col = np.ones((n,1))
         # Add bias
         X_train_work = np.append(X_train_work, bias_col, axis=1)
@@ -57,14 +69,7 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         return self.beta_optim
 
     def predict(self, X):
-        j_max = len(self.limits)
-        m = len(X[0])
-        X_transformed = np.zeros((len(X),m*j_max))
-        for j, limit in enumerate(self.limits):    
-            X_j = copy.deepcopy(X)
-            X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
-            X_j[X_j<1.0] = 0.0
-            X_transformed[:,j*m:(j+1)*m] = X_j
+        X_transformed = self.__transform(X)
         n = X.shape[0]
         # Remove all-zeros columns
         if self.remove_all_zero_columns:
@@ -241,8 +246,71 @@ def predict_linear_regression_housing():
     print('Standard deviation of test RMSE:', std_test_rmse)
     print('Training time (s): ', sum(training_time_list)/float(n_splits))
 
+def housing_k_fold_polynomial_test():
+    # Data 
+    housing_data = pd.read_csv('./data/california_housing.csv')
+    housing_data.drop(['No'], axis = 1, inplace = True)
+    normalized_housing_data=(housing_data-housing_data.min())/(housing_data.max()-housing_data.min())
+    Y = housing_data['Label'].to_numpy()
+    X = normalized_housing_data.loc[:, normalized_housing_data.columns != 'Label'].to_numpy()
+    # Model
+    regularisation_param = 0.001
+    number_of_points = 15
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, base='poly')
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
+def fico_k_fold_polynomial_test():
+    # Data 
+    fico_data = pd.read_csv('./data/fico.csv')
+    fico_data.drop(['No'], axis = 1, inplace = True)
+    normalized_fico_data=(fico_data-fico_data.min())/(fico_data.max()-fico_data.min())
+    Y = fico_data['ExternalRiskEstimate'].to_numpy()
+    X = normalized_fico_data.loc[:, normalized_fico_data.columns != 'ExternalRiskEstimate'].to_numpy()
+    # Model
+    regularisation_param = 0.001
+    number_of_points = 5
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, base='poly')
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
+def fico_k_fold_radial_test():
+    # Data 
+    fico_data = pd.read_csv('./data/fico.csv')
+    fico_data.drop(['No'], axis = 1, inplace = True)
+    normalized_fico_data=(fico_data-fico_data.min())/(fico_data.max()-fico_data.min())
+    Y = fico_data['ExternalRiskEstimate'].to_numpy()
+    X = normalized_fico_data.loc[:, normalized_fico_data.columns != 'ExternalRiskEstimate'].to_numpy()
+    # Model
+    regularisation_param = 0.001
+    number_of_points = 60
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, base='radi', C=20.0)
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
+
+def housing_k_fold_radial_test():
+    # Data 
+    housing_data = pd.read_csv('./data/california_housing.csv')
+    housing_data.drop(['No'], axis = 1, inplace = True)
+    normalized_housing_data=(housing_data-housing_data.min())/(housing_data.max()-housing_data.min())
+    Y = housing_data['Label'].to_numpy()
+    X = normalized_housing_data.loc[:, normalized_housing_data.columns != 'Label'].to_numpy()
+    # Model
+    regularisation_param = 0.0001
+    number_of_points = 150
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, base='radi', C=20.0)
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
 if __name__ == '__main__':
    #predict_linear_regression_housing()
    #housing_k_fold_test()
-   fico_k_fold_test()
+   #fico_k_fold_test()
    #predict_linear_regression_fico()
+   fico_k_fold_radial_test()
+   #housing_k_fold_radial_test()

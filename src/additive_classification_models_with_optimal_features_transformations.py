@@ -13,12 +13,14 @@ from sklearn.model_selection import KFold
 from scipy.special import expit
 
 class OptimalFeaturesTransforamtionAdditiveModel:
-    def __init__(self, lambda_param, number_of_points=10, balance=1.0, remove_all_zero_columns=True):
+    def __init__(self, lambda_param, number_of_points=10, balance=1.0, remove_all_zero_columns=True, base='picewise_constant', C=1.0):
         self.limits = np.linspace(0.0, 1.0, num=number_of_points, endpoint=False)
         self.div = 1.0/float(number_of_points)
         self.lambda_param = lambda_param
         self.balance = balance
         self.remove_all_zero_columns = remove_all_zero_columns
+        self.base = base
+        self.C = C
         self.zero_columns_indices = []
 
     @staticmethod
@@ -30,19 +32,33 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         obj_value = (1.0/float(n))*np.sum(terms) + lambda_param*np.linalg.norm(beta,ord=2)
         #print(obj_value)
         return obj_value
+    
+    def __transform(self, X):
+        j_max = len(self.limits)
+        m = X.shape[1]
+        X_transformed = np.zeros((X.shape[0], m*j_max))
+        if self.base == 'picewise_constant':
+            X_transformed[X>=1.0] = 0.999
+            for j, limit in enumerate(self.limits):
+                    X_j = copy.deepcopy(X)
+                    X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
+                    X_j[X_j<1.0] = 0.0
+                    X_transformed[:,j*m:(j+1)*m] = X_j
+        elif self.base == 'poly':
+            X_pow = X
+            for j, limit in enumerate(self.limits):
+                    X_pow = X_pow*X
+                    X_transformed[:,j*m:(j+1)*m] = X_pow
+        else:
+            for j, limit in enumerate(self.limits):
+                    X_rad = np.exp(-self.C*np.power(X-limit, 2))
+                    X_transformed[:,j*m:(j+1)*m] = X_rad
+        return X_transformed
 
     def train(self, X_train,Y_train):
         Y_train_work = 2.0*Y_train - 1
         n = X_train.shape[0]
-        m = X_train.shape[1]
-        j_max = len(self.limits)
-        X_train_work = np.zeros((X_train.shape[0], m*j_max))
-        X_train[X_train>=1.0] = 0.999
-        for j, limit in enumerate(self.limits):
-                X_j = copy.deepcopy(X_train)
-                X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
-                X_j[X_j<1.0] = 0.0
-                X_train_work[:,j*m:(j+1)*m] = X_j
+        X_train_work = self.__transform(X_train)
         # Remove all-zeros columns
         if self.remove_all_zero_columns: 
             self.zero_columns_indices = np.where(~X_train_work.any(axis=0))[0]
@@ -64,15 +80,8 @@ class OptimalFeaturesTransforamtionAdditiveModel:
         return self.beta_optim
 
     def predict(self, X):
-        j_max = len(self.limits)
-        m = len(X[0])
-        X_transformed = np.zeros((len(X),m*j_max))
-        for j, limit in enumerate(self.limits):    
-            X_j = copy.deepcopy(X)
-            X_j[(X_j>=limit) & (X_j<limit + self.div)] = 1.0
-            X_j[X_j<1.0] = 0.0
-            X_transformed[:,j*m:(j+1)*m] = X_j
         n = X.shape[0]
+        X_transformed = self.__transform(X)
         # Remove all-zeros columns
         if self.remove_all_zero_columns:
             X_transformed = np.delete(X_transformed, self.zero_columns_indices, axis=1)
@@ -247,7 +256,83 @@ def compas_k_fold_grid_search():
     print('Best lambda:', lambda_param_best)
     print('Best number of data points:', number_of_points_best)
     print('Best balance:', b_best)
-    
+
+def compas_k_fold_poly_test():
+    # Data 
+    comps_data = pd.read_csv('./data/compas.csv', delimiter=';')
+    normalized_comps_data=(comps_data-comps_data.min())/(comps_data.max()-comps_data.min())
+    Y = normalized_comps_data['two_year_recid'].to_numpy()
+    X = normalized_comps_data.loc[:, normalized_comps_data.columns != 'two_year_recid'].to_numpy()
+    # Model
+    regularisation_param = 0.00001
+    number_of_points = 122
+    balance = 1.0
+    C = 20.0
+    base = 'poly'
+    remove_0_columns = True
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, balance, remove_0_columns, base, C)
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
+def compas_k_fold_radial_test():
+    # Data 
+    comps_data = pd.read_csv('./data/compas.csv', delimiter=';')
+    normalized_comps_data=(comps_data-comps_data.min())/(comps_data.max()-comps_data.min())
+    Y = normalized_comps_data['two_year_recid'].to_numpy()
+    X = normalized_comps_data.loc[:, normalized_comps_data.columns != 'two_year_recid'].to_numpy()
+    # Model
+    regularisation_param = 0.00001
+    number_of_points = 122
+    balance = 1.0
+    C = 20.0
+    base = 'radi'
+    remove_0_columns = True
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, balance, remove_0_columns, base, C)
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
+def credit_k_fold_poly_test():
+    # Data 
+    credit_data = pd.read_csv('./data/credit.csv')
+    credit_data.drop(['No'], axis = 1, inplace = True)
+    normalized_credit_data=(credit_data-credit_data.min())/(credit_data.max()-credit_data.min())
+    Y = normalized_credit_data['Class'].to_numpy()
+    X = normalized_credit_data.loc[:,normalized_credit_data.columns != 'Class'].to_numpy()
+    # Model
+    regularisation_param = 0.009
+    number_of_points = 10
+    C = 20.0
+    base = 'poly'
+    remove_0_columns = True
+    balance = 1
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, balance, remove_0_columns,  base, C)
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
+def credit_k_fold_radi_test():
+    # Data 
+    credit_data = pd.read_csv('./data/credit.csv')
+    credit_data.drop(['No'], axis = 1, inplace = True)
+    normalized_credit_data=(credit_data-credit_data.min())/(credit_data.max()-credit_data.min())
+    Y = normalized_credit_data['Class'].to_numpy()
+    X = normalized_credit_data.loc[:,normalized_credit_data.columns != 'Class'].to_numpy()
+    # Model
+    regularisation_param = 0.01 
+    number_of_points = 15
+    C = 20.0
+    base = 'radi'
+    remove_0_columns = True
+    balance = 1
+    oftam = OptimalFeaturesTransforamtionAdditiveModel(regularisation_param, number_of_points, balance, remove_0_columns,  base, C)
+    # Evaluate
+    n_splits = 5
+    oftam.evaluate_k_fold(X, Y, n_splits)
+
 if __name__ == '__main__':
    #credit_k_fold_test()
-   compas_k_fold_test()
+   #compas_k_fold_test()
+   #compas_k_fold_poly_test()
+   credit_k_fold_radi_test()
